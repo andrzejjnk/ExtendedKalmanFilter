@@ -28,17 +28,17 @@ class EKF:
 
         # Set default noise values if none are provided
         if gyroNoise is None:
-            self.gyroNoise = [0.01, 0.01, 0.01]
+            self.gyroNoise = [0.3 ** 2, 0.3 ** 2, 0.3 ** 2]
         else:
             self.gyroNoise = gyroNoise
 
         if accNoise is None:
-            self.accNoise = [0.01, 0.01, 0.01]
+            self.accNoise = [0.5 ** 2, 0.5 ** 2, 0.5 ** 2]
         else:
             self.accNoise = accNoise
 
         if magNoise is None:
-            self.magNoise = [0.01, 0.01, 0.01]
+            self.magNoise = [1.8 ** 2, 1.8 ** 2, 4.8 ** 2]
         else:
             self.magNoise = magNoise
 
@@ -456,21 +456,3 @@ class EKF:
             # Covariance update
             P_new = self.update_P(K, H, P_hat)
             self.P[:, :, i] = P_new  # Update the covariance matrix
-
-    def get_orientation(self):
-        """
-        Retrieve the estimated orientation over time.
-
-        Returns:
-        - orientation: Nx4 array of quaternions [w, x, y, z]
-        """
-        return self.orientation
-
-    def get_covariance(self):
-        """
-        Retrieve the state covariance matrices over time.
-
-        Returns:
-        - P: 4x4xN array of covariance matrices
-        """
-        return self.P

@@ -28,17 +28,17 @@ class EKF:
 
         # Set default noise values if none are provided
         if gyroNoise is None:
-            self.gyroNoise = [0.02 ** 2, 0.02 ** 2, 0.02 ** 2] # Example: [variance_x, variance_y, variance_z]
+            self.gyroNoise = [0.01, 0.01, 0.01]
         else:
             self.gyroNoise = gyroNoise
 
         if accNoise is None:
-            self.accNoise = [0.02 ** 2, 0.02 ** 2, 0.02 ** 2]  # Example: [variance_x, variance_y, variance_z]
+            self.accNoise = [0.01, 0.01, 0.01]
         else:
             self.accNoise = accNoise
 
         if magNoise is None:
-            self.magNoise = [0.02 ** 2, 0.02 ** 2, 0.02 ** 2]  # Example: [variance_x, variance_y, variance_z]
+            self.magNoise = [0.01, 0.01, 0.01]
         else:
             self.magNoise = magNoise
 

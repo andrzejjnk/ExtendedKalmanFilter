@@ -3,26 +3,24 @@ import numpy as np
 class EKF:
     """
     EKF Class for computing Extended Kalman Filter
-    Based on measurements from MARG-type sensors to compute orientation of
-    an object with reference to the ENU (East, North, Up) reference frame.
+    Based on measurements from MARG-type sensors (now only gyro and accelerometer)
+    to compute orientation of an object with reference to the ENU (East, North, Up) reference frame.
     """
 
-    def __init__(self, gyroData, accData, magData, time, gyroNoise=None, accNoise=None, magNoise=None):
+    def __init__(self, gyroData, accData, time, gyroNoise=None, accNoise=None):
         """
         Constructor for the EKF class.
 
         Parameters:
         - gyroData: Nx3 array of angular velocity [rad/s]
         - accData: Nx3 array of linear acceleration [m/s^2]
-        - magData: Nx3 array of magnetic field strength [uT]
         - time: N-element array of time stamps [ms]
+        - gyroNoise: 3-element array of gyroscope noise variances
         - accNoise: 3-element array of accelerometer noise variances
-        - magNoise: 3-element array of magnetometer noise variances
         """
         # Input data
         self.gyroData = gyroData
         self.accData = accData
-        self.magData = magData
         self.time = time
         self.num_steps = len(time)
 
@@ -37,11 +35,6 @@ class EKF:
         else:
             self.accNoise = accNoise
 
-        if magNoise is None:
-            self.magNoise = [1.8 ** 2, 1.8 ** 2, 4.8 ** 2]
-        else:
-            self.magNoise = magNoise
-
         # Initial covariance matrix - make it 3D to store for each time step
         self.P = np.zeros((4, 4, self.num_steps))
         self.P[:, :, 0] = np.eye(4)  # Set the initial covariance matrix
@@ -52,9 +45,8 @@ class EKF:
         # Measurement data (normalized)
         self.measurements = None
 
-        # Constants
+        # Gravity reference vector
         self.g = np.array([0, 0, 1])
-        self.r = np.array([0, np.cos(np.deg2rad(66)), -np.sin(np.deg2rad(66))])
 
         # Initialize orientation and measurements
         self.normalize_measurements()
@@ -62,57 +54,19 @@ class EKF:
 
     def normalize_measurements(self):
         """
-        Normalize accelerometer and magnetometer measurements.
+        Normalize accelerometer measurements.
         Normalization is done row-wise so that each measurement vector has unit length.
         """
-        # Avoid division by zero by adding a small epsilon
         epsilon = 1e-8
         norm_acc = self.accData / (np.linalg.norm(self.accData, axis=1, keepdims=True) + epsilon)
-        norm_mag = self.magData / (np.linalg.norm(self.magData, axis=1, keepdims=True) + epsilon)
-        self.measurements = np.hstack((norm_acc, norm_mag))  # Shape: (N, 6)
+        self.measurements = norm_acc  # Shape: (N, 3)
 
     def initialize_orientation(self):
         """
         Initialize the orientation quaternion based on the first set of measurements.
-        This is done using an e-compass method.
+        This is done using an accelerometer-based initialization.
         """
         q = np.array([1, 0, 0, 0])  # Starting with a neutral orientation (identity quaternion)
-        self.orientation[0] = q  # Assign the initial quaternion
-        a_measure = self.measurements[0, 0:3]  # First accelerometer measurement
-        m_measure = self.measurements[0, 3:6]  # First magnetometer measurement
-        m_ref = self.r
-        a_ref = self.g
-
-        # Compute normalized cross products
-        cross_ref = np.cross(m_ref, a_ref)
-        norm_cross_ref = np.linalg.norm(cross_ref) + 1e-8
-        n_cross_ref = cross_ref / norm_cross_ref
-
-        cross_meas = np.cross(m_measure, a_measure)
-        norm_cross_meas = np.linalg.norm(cross_meas) + 1e-8
-        n_cross_meas = cross_meas / norm_cross_meas
-
-        # Construct matrix A
-        A_ref = np.column_stack((m_ref, n_cross_ref, np.cross(m_ref, n_cross_ref)))
-        A_meas = np.column_stack((m_measure, n_cross_meas, np.cross(m_measure, n_cross_meas)))
-
-        # Compute A matrix product
-        A = A_ref @ A_meas.T
-
-        # Compute quaternion components
-        q0 = 0.5 * np.sqrt(1 + A[0, 0] + A[1, 1] + A[2, 2])
-        if q0 < 1e-8:
-            q0 = 1e-8  # Prevent division by zero
-
-        q1 = (A[2, 1] - A[1, 2]) / (4 * q0)
-        q2 = (A[0, 2] - A[2, 0]) / (4 * q0)
-        q3 = (A[1, 0] - A[0, 1]) / (4 * q0)
-
-        # Normalize the quaternion
-        q = np.array([q0, q1, q2, q3])
-        q /= np.linalg.norm(q)
-
-        # Assign the computed quaternion for the initial orientation
         self.orientation[0] = q
 
     def f(self, q, w, dt):
@@ -215,21 +169,19 @@ class EKF:
         P_hat = F @ P @ F.T + Q
         return P_hat
 
-    def h(self, q, g, r):
+    def h(self, q, g):
         """
-        Measurement function mapping the state quaternion to expected sensor measurements.
+        Measurement function mapping the state quaternion to expected accelerometer measurements.
 
         Parameters:
         - q: State quaternion [w, x, y, z]
         - g: Gravity vector in ENU frame [gx, gy, gz]
-        - r: Magnetic field vector in ENU frame [rx, ry, rz]
 
         Returns:
-        - h: 6-element measurement prediction vector
+        - h: 3-element measurement prediction vector
         """
         qw, qx, qy, qz = q
         gx, gy, gz = g
-        rx, ry, rz = r
 
         # Accelerometer measurement prediction (gravity)
         acc_pred = 2 * np.array([
@@ -246,48 +198,28 @@ class EKF:
             gz * (0.5 - qx**2 - qy**2)
         ])
 
-        # Magnetometer measurement prediction (magnetic field)
-        mag_pred = 2 * np.array([
-            rx * (0.5 - qy**2 - qz**2) +
-            ry * (qw * qz + qx * qy) +
-            rz * (qx * qz - qw * qy),
+        return acc_pred
 
-            rx * (qx * qy - qw * qz) +
-            ry * (0.5 - qx**2 - qz**2) +
-            rz * (qw * qx + qy * qz),
-
-            rx * (qw * qy + qx * qz) +
-            ry * (qy * qz - qw * qx) +
-            rz * (0.5 - qx**2 - qy**2)
-        ])
-
-        h = np.hstack((acc_pred, mag_pred))  # Shape: (6,)
-
-        return h
-
-    def H_jacobian(self, q, g, r):
+    def H_jacobian(self, q, g):
         """
         Compute the Jacobian matrix H of the measurement function h with respect to the state quaternion.
 
         Parameters:
         - q: State quaternion [w, x, y, z]
         - g: Gravity vector in ENU frame [gx, gy, gz]
-        - r: Magnetic field vector in ENU frame [rx, ry, rz]
 
         Returns:
-        - H: 6x4 Jacobian matrix
+        - H: 3x4 Jacobian matrix
         """
         qw, qx, qy, qz = q
         gx, gy, gz = g
-        rx, ry, rz = r
 
-        # Precompute terms
-        H = np.zeros((6, 4))
+        # Jacobian with respect to accelerometer prediction only
+        H = np.zeros((3, 4))
 
-        # Accelerometer Jacobian
         H[0, :] = 2 * np.array([
             gy * qz - gz * qy,
-            gx * ( -2 * qy ) + gy * qw + gz * qz,
+            gx * (-2 * qy) + gy * qw + gz * qz,
             -2 * gx * qy + gy * qz - gz * qw,
             -2 * gx * qz - gy * qy + gz * qx
         ])
@@ -300,159 +232,50 @@ class EKF:
         ])
 
         H[2, :] = 2 * np.array([
-            gy * qz - gz * qy,
-            gx * qz + gy * qw - gz * qx,
-            gx * qx + gy * qz - gz * qy,
-            gx * qy + gy * qx - gz * qx
+            -gx * qy + gy * qx,
+            gx * qz + gy * qy - gz * qw,
+            gx * qw - gy * qz + gz * qx,
+            gx * qx + gy * qy - gz * qw
         ])
 
-        # Magnetometer Jacobian
-        H[3, :] = 2 * np.array([
-            ry * qz - rz * qy,
-            rx * ( -2 * qy ) + ry * qw + rz * qz,
-            -2 * rx * qy + ry * qz - rz * qw,
-            -2 * rx * qz - ry * qy + rz * qx
-        ])
-
-        H[4, :] = 2 * np.array([
-            ry * qw + rz * qx,
-            rx * qy + ry * qx + rz * qz,
-            rx * qx - ry * qw + rz * qz,
-            rx * qz - ry * qx - rz * qw
-        ])
-
-        H[5, :] = 2 * np.array([
-            ry * qz - rz * qy,
-            rx * qz + ry * qw - rz * qx,
-            rx * qx + ry * qz - rz * qy,
-            rx * qy + ry * qx - rz * qx
-        ])
-
-        return H  # Shape: (6,4)
-
-    def R_measurement_noise(self):
-        """
-        Compute the measurement noise covariance matrix R.
-
-        Returns:
-        - R: 6x6 measurement noise covariance matrix
-        """
-        diag = np.hstack((self.accNoise, self.magNoise))
-        R = np.diag(diag)
-        return R
-
-    def innovation(self, q_hat, z):
-        """
-        Compute the innovation vector.
-
-        Parameters:
-        - q_hat: Predicted state quaternion [w, x, y, z]
-        - z: Current measurement vector (6,)
-
-        Returns:
-        - v: Innovation vector (6,)
-        """
-        h_pred = self.h(q_hat, self.g, self.r)
-        v = z - h_pred
-        return v
-
-    def S_matrix(self, H, P_hat, R):
-        """
-        Compute the innovation covariance matrix S.
-
-        Parameters:
-        - H: Measurement Jacobian matrix (6x4)
-        - P_hat: Predicted state covariance matrix (4x4)
-        - R: Measurement noise covariance matrix (6x6)
-
-        Returns:
-        - S: Innovation covariance matrix (6x6)
-        """
-        S = H @ P_hat @ H.T + R
-        return S
-
-    def Kalman_gain(self, P_hat, H, S):
-        """
-        Compute the Kalman Gain matrix K.
-
-        Parameters:
-        - P_hat: Predicted state covariance matrix (4x4)
-        - H: Measurement Jacobian matrix (6x4)
-        - S: Innovation covariance matrix (6x6)
-
-        Returns:
-        - K: Kalman Gain matrix (4x6)
-        """
-        K = P_hat @ H.T @ np.linalg.inv(S)
-        return K
-
-    def update_P(self, K, H, P_hat):
-        """
-        Update the state covariance matrix P after measurement update.
-
-        Parameters:
-        - K: Kalman Gain matrix (4x6)
-        - H: Measurement Jacobian matrix (6x4)
-        - P_hat: Predicted state covariance matrix (4x4)
-
-        Returns:
-        - P_new: Updated state covariance matrix (4x4)
-        """
-        I = np.eye(4)
-        P_new = (I - K @ H) @ P_hat
-        return P_new
+        return H
 
     def run(self):
         """
-        Execute the main EKF loop to estimate orientation over time.
+        Run the Extended Kalman Filter (EKF) over all time steps.
         """
-        N = self.gyroData.shape[0]
-        self.orientation[0] = self.orientation[0]  # Set initial orientation (this line is unnecessary)
+        for t in range(1, self.num_steps):
+            # Compute time step
+            dt = (self.time[t] - self.time[t - 1]) / 1000.0  # Convert ms to seconds
 
-        # Initialize P for each time step
-        # self.P is already correctly sized in the constructor
+            # Get current state and measurement
+            q = self.orientation[t - 1]
+            w = self.gyroData[t]
+            acc_measured = self.measurements[t]
 
-        R = self.R_measurement_noise()
+            # Prediction Step
+            q_hat = self.f(q, w, dt)  # Predict next state
+            P_hat = self.P_hat_prediction(self.P[:, :, t - 1], q, w, self.gyroNoise, dt)  # Predict covariance
 
-        for i in range(1, N):
-            # Time difference
-            dt = self.time[i] - self.time[i - 1]  # Assuming time is in milliseconds
-            dt /= 1000.0  # Convert to seconds if needed
+            # Measurement Update Step
+            acc_pred = self.h(q_hat, self.g)  # Predict accelerometer measurement
+            H = self.H_jacobian(q_hat, self.g)  # Jacobian of measurement function
 
-            # Previous state
-            q_prev = self.orientation[i - 1]
+            # Kalman gain
+            R = np.diag(self.accNoise)  # Measurement noise covariance
+            S = H @ P_hat @ H.T + R  # Residual covariance
+            K = P_hat @ H.T @ np.linalg.inv(S)  # Kalman gain
 
-            # Angular velocity
-            w = self.gyroData[i]
+            # Update quaternion estimate with measurement residual
+            y_tilde = acc_measured - acc_pred  # Measurement residual
+            q_hat = q_hat + K @ y_tilde  # Update state estimate
+            q_hat /= np.linalg.norm(q_hat)  # Re-normalize quaternion
 
-            # Prediction step
-            q_hat = self.f(q_prev, w, dt)
-            P_hat = self.P[:, :, i - 1]
-            P_hat = self.P_hat_prediction(P_hat, q_prev, w, self.gyroNoise, dt)
+            # Update covariance
+            self.P[:, :, t] = (np.eye(4) - K @ H) @ P_hat
 
-            # Measurement
-            z = self.measurements[i]
+            # Save the orientation estimate
+            self.orientation[t] = q_hat
 
-            # Innovation
-            v = self.innovation(q_hat, z)
+        return self.orientation  # Return estimated quaternion orientations
 
-            # Measurement Jacobian
-            H = self.H_jacobian(q_hat, self.g, self.r)
-
-            # Innovation covariance
-            S = self.S_matrix(H, P_hat, R)
-
-            # Kalman Gain
-            K = self.Kalman_gain(P_hat, H, S)
-
-            # State update
-            q_new = q_hat + K @ v
-
-            # Normalize quaternion
-            q_new /= np.linalg.norm(q_new)
-
-            self.orientation[i] = q_new  # Assign the updated quaternion
-
-            # Covariance update
-            P_new = self.update_P(K, H, P_hat)
-            self.P[:, :, i] = P_new  # Update the covariance matrix

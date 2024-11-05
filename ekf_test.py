@@ -4,6 +4,7 @@ import csv
 import math
 from EKF import *
 import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error
 
 # Wczytywanie danych
 data = pd.read_csv('data/train.csv')
@@ -12,7 +13,7 @@ data = pd.read_csv('data/train.csv')
 time = data['Time'].values  # Zakładamy, że czas jest w sekundach
 gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # Zmiana jednostek z deg/s na rad/s
 accData = data[['AccX', 'AccY', 'AccZ']].values * 9.81  # Zmiana jednostek na m/s²
-magData = data[['MagX', 'MagY', 'MagZ']].values * 100  # Zmiana jednostek magnetometru (jeśli dane są w mG)
+magData = data[['MagX', 'MagY', 'MagZ']].values * 1000  # Zmiana jednostek magnetometru (jeśli dane są w mG)
 
 # Określenie liczby próbek w stanie spoczynku
 num_stationary_samples = 400
@@ -32,7 +33,7 @@ mag_bias = np.mean(magData[:num_stationary_samples], axis=0)
 magData_calibrated = magData - mag_bias
 
 # Inicjalizacja EKF z poprawionymi danymi (należy mieć zaimplementowany EKF)
-ekf = EKF(gyroData=gyroData_calibrated, accData=accData_calibrated, magData=magData, time=time)
+ekf = EKF(gyroData=gyroData_calibrated, accData=accData_calibrated, time=time)
 ekf.P *= 1  # Opcjonalna modyfikacja macierzy kowariancji na początek
 
 # Uruchomienie EKF
@@ -152,3 +153,32 @@ def plot_angles(computed_angles, csv_file):
 
 
 plot_angles(quaternions, 'data/train.csv')
+
+def calculate_mse(original_csv, computed_csv):
+    # Load original and computed data
+    original_data = pd.read_csv(original_csv)
+    computed_data = pd.read_csv(computed_csv)
+    
+    # Extract roll, pitch, yaw from each dataset
+    roll_original = original_data['roll']
+    pitch_original = original_data['pitch']
+    yaw_original = original_data['yaw']
+    
+    roll_computed = computed_data['roll']
+    pitch_computed = computed_data['pitch']
+    yaw_computed = computed_data['yaw']
+    
+    # Calculate mean squared error for each angle
+    mse_roll = mean_squared_error(roll_original, roll_computed)
+    mse_pitch = mean_squared_error(pitch_original, pitch_computed)
+    mse_yaw = mean_squared_error(yaw_original, yaw_computed)
+    
+    # Print and return the results
+    print(f"MSE for Roll: {mse_roll}")
+    print(f"MSE for Pitch: {mse_pitch}")
+    print(f"MSE for Yaw: {mse_yaw}")
+    
+    return mse_roll, mse_pitch, mse_yaw
+
+# Example usage:
+mse_roll, mse_pitch, mse_yaw = calculate_mse("data/train.csv", "orientation_test_output.csv")

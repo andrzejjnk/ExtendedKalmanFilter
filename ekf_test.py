@@ -27,11 +27,6 @@ gyroData_calibrated = gyroData - gyro_bias
 acc_bias = np.mean(accData[:1000], axis=0) - np.array([0, 0, 9.81])
 accData_calibrated = accData - acc_bias
 
-# Krok 3: Kalibracja magnetometru
-# Zakładamy przesunięcie jako średnią wartość początkowych próbek w każdej osi
-mag_bias = np.mean(magData[:num_stationary_samples], axis=0)
-magData_calibrated = magData - mag_bias
-
 # Inicjalizacja EKF z poprawionymi danymi (należy mieć zaimplementowany EKF)
 ekf = EKF(gyroData=gyroData_calibrated, accData=accData_calibrated, time=time)
 ekf.P *= 1  # Opcjonalna modyfikacja macierzy kowariancji na początek

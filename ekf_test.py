@@ -13,7 +13,7 @@ data = pd.read_csv('data/train.csv')
 time = data['Time'].values  # Zakładamy, że czas jest w sekundach
 gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # Zmiana jednostek z deg/s na rad/s
 accData = data[['AccX', 'AccY', 'AccZ']].values * 9.81  # Zmiana jednostek na m/s²
-magData = data[['MagX', 'MagY', 'MagZ']].values * 1000  # Zmiana jednostek magnetometru (jeśli dane są w mG)
+magData = data[['MagX', 'MagY', 'MagZ']].values / 100  # Zmiana jednostek magnetometru (jeśli dane są w mG) (było razy 1000) # 15.11.2024 Zakładamy, że dane są w mikro Teslach, a chcemy uzyskać dane w Gaussach więc dzielimy przez 100
 
 # Określenie liczby próbek w stanie spoczynku
 num_stationary_samples = 400

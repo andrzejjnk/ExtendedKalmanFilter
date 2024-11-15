@@ -251,14 +251,14 @@ class EKF:
             # Get current state and measurement
             q = self.orientation[t - 1]
             w = self.gyroData[t]
-            acc_measured = self.measurements[t]
+            z_t = self.measurements[t]
 
             # Prediction Step
             q_hat = self.f(q, w, dt)  # Predict next state
             P_hat = self.P_hat_prediction(self.P[:, :, t - 1], q, w, self.gyroNoise, dt)  # Predict covariance
 
             # Measurement Update Step
-            acc_pred = self.h(q_hat, self.g)  # Predict accelerometer measurement
+            h_q_hat = self.h(q_hat, self.g)  # Predict accelerometer measurement
             H = self.H_jacobian(q_hat, self.g)  # Jacobian of measurement function
 
             # Kalman gain
@@ -267,8 +267,8 @@ class EKF:
             K = P_hat @ H.T @ np.linalg.inv(S)  # Kalman gain
 
             # Update quaternion estimate with measurement residual
-            y_tilde = acc_measured - acc_pred  # Measurement residual
-            q_hat = q_hat + K @ y_tilde  # Update state estimate
+            v_t = z_t - h_q_hat  # Measurement residual
+            q_hat = q_hat + K @ v_t  # Update state estimate
             q_hat /= np.linalg.norm(q_hat)  # Re-normalize quaternion
 
             # Update covariance

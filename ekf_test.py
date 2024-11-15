@@ -16,20 +16,19 @@ accData = data[['AccX', 'AccY', 'AccZ']].values * 9.81  # Zmiana jednostek na m/
 magData = data[['MagX', 'MagY', 'MagZ']].values / 100  # Zmiana jednostek magnetometru (jeśli dane są w mG) (było razy 1000) # 15.11.2024 Zakładamy, że dane są w mikro Teslach, a chcemy uzyskać dane w Gaussach więc dzielimy przez 100
 
 # Określenie liczby próbek w stanie spoczynku
-num_stationary_samples = 400
+num_stationary_samples = 1000
 
 # Krok 1: Kalibracja żyroskopu
-gyro_bias = np.mean(gyroData[:1000], axis=0)
+gyro_bias = np.mean(gyroData[:num_stationary_samples], axis=0)
 gyroData_calibrated = gyroData - gyro_bias
 
 # Krok 2: Kalibracja akcelerometru
 # Zakładamy, że w stanie spoczynku przyspieszenie w osi Z = 9.81, a w osiach X i Y = 0
-acc_bias = np.mean(accData[:1000], axis=0) - np.array([0, 0, 9.81])
+acc_bias = np.mean(accData[:num_stationary_samples], axis=0) - np.array([0, 0, 9.81])
 accData_calibrated = accData - acc_bias
 
 # Inicjalizacja EKF z poprawionymi danymi (należy mieć zaimplementowany EKF)
 ekf = EKF(gyroData=gyroData_calibrated, accData=accData_calibrated, time=time)
-ekf.P *= 1  # Opcjonalna modyfikacja macierzy kowariancji na początek
 
 # Uruchomienie EKF
 ekf.run()

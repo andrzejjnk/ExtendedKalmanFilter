@@ -48,26 +48,15 @@ class EKF:
         # Gravity reference vector
         self.g = np.array([0, 0, 1])
 
-        # Initialize orientation and measurements
-        self.normalize_measurements()
-        self.initialize_orientation()
-
-    def normalize_measurements(self):
-        """
-        Normalize accelerometer measurements.
-        Normalization is done row-wise so that each measurement vector has unit length.
-        """
+        # Normalize accelerometer measurements.
+        # Normalization is done row-wise so that each measurement vector has unit length.
         epsilon = 1e-8
         norm_acc = self.accData / (np.linalg.norm(self.accData, axis=1, keepdims=True) + epsilon)
         self.measurements = norm_acc  # Shape: (N, 3)
 
-    def initialize_orientation(self):
-        """
-        Initialize the orientation quaternion based on the first set of measurements.
-        This is done using an accelerometer-based initialization.
-        """
-        q = np.array([1, 0, 0, 0])  # Starting with a neutral orientation (identity quaternion)
-        self.orientation[0] = q
+        # Initialize the orientation quaternion based on the first set of measurements. This is done using an accelerometer-based initialization.
+        self.orientation[0] = np.array([1, 0, 0, 0]) # Starting with a neutral orientation (identity quaternion)
+
 
     def f(self, q, w, dt):
         """

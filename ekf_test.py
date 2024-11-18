@@ -6,16 +6,14 @@ from EKF import *
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
 
-# Wczytywanie danych
 data = pd.read_csv('data/train.csv')
 
-# Ekstrakcja danych dla czujników
 time = data['Time'].values  # Zakładamy, że czas jest w sekundach
 gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # Zmiana jednostek z deg/s na rad/s
 accData = data[['AccX', 'AccY', 'AccZ']].values * 9.81  # Zmiana jednostek na m/s²
 magData = data[['MagX', 'MagY', 'MagZ']].values / 100  # Zmiana jednostek magnetometru (jeśli dane są w mG) (było razy 1000) # 15.11.2024 Zakładamy, że dane są w mikro Teslach, a chcemy uzyskać dane w Gaussach więc dzielimy przez 100
 
-# Określenie liczby próbek w stanie spoczynku
+# Określenie liczby próbek w stanie spoczynku (potrzebne do kalibracji)
 num_stationary_samples = 1000
 
 # Krok 1: Kalibracja żyroskopu
@@ -27,23 +25,24 @@ gyroData_calibrated = gyroData - gyro_bias
 acc_bias = np.mean(accData[:num_stationary_samples], axis=0) - np.array([0, 0, 9.81])
 accData_calibrated = accData - acc_bias
 
-# Inicjalizacja EKF z poprawionymi danymi (należy mieć zaimplementowany EKF)
 ekf = EKF(gyroData=gyroData_calibrated, accData=accData_calibrated, time=time)
 
-# Uruchomienie EKF
+# główna funkcja EKFa
 ekf.run()
 
-# Access the results
+
 # Assuming `orientation` stores quaternion orientations at each step
 orientations = ekf.orientation
 
-# Print the results (e.g., first few orientation estimates)
+
 quaternions = []
 for i, orientation in enumerate(orientations):
     # print(f"Step {i+1} - Quaternion Orientation: {orientation}")
     quaternions.append(orientation)
 
-
+# source: 
+# https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+# Quaternion to Euler angles (in 3-2-1 sequence) conversion
 def quaternion_to_euler(q):
     w, x, y, z = q
     
@@ -124,7 +123,7 @@ def plot_angles(csv_file):
 
 plot_angles('data/train.csv')
 
-def calculate_mse(original_csv, computed_csv):
+def calculate_mse(original_csv, computed_csv) -> None:
     # Load original and computed data
     original_data = pd.read_csv(original_csv)
     computed_data = pd.read_csv(computed_csv)
@@ -147,8 +146,5 @@ def calculate_mse(original_csv, computed_csv):
     print(f"MSE for Roll: {mse_roll}")
     print(f"MSE for Pitch: {mse_pitch}")
     print(f"MSE for Yaw: {mse_yaw}")
-    
-    return mse_roll, mse_pitch, mse_yaw
 
-# Example usage:
-mse_roll, mse_pitch, mse_yaw = calculate_mse("data/train.csv", "orientation_test_output.csv")
+calculate_mse("data/train.csv", "orientation_test_output.csv")

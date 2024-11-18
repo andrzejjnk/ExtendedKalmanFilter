@@ -26,6 +26,7 @@ class EKF:
 
         # Set default noise values if none are provided
         if gyroNoise is None:
+            # The assumption that the noise variances of the gyroscope axes are all equal is almost never true in reality. 
             self.gyroNoise = [0.3 ** 2, 0.3 ** 2, 0.3 ** 2]
         else:
             self.gyroNoise = gyroNoise
@@ -42,20 +43,17 @@ class EKF:
         # Process data containers
         self.orientation = np.zeros((self.num_steps, 4))  # Store quaternion orientation [w, x, y, z]
         
-        # Measurement data (normalized)
-        self.measurements = None
-
         # Gravity reference vector
         self.g = np.array([0, 0, 1])
 
         # Normalize accelerometer measurements.
         # Normalization is done row-wise so that each measurement vector has unit length.
-        epsilon = 1e-8
+        epsilon = 1e-8 # epsilon is used to prevent dividing by zero
         norm_acc = self.accData / (np.linalg.norm(self.accData, axis=1, keepdims=True) + epsilon)
         self.measurements = norm_acc  # Shape: (N, 3)
 
         # Initialize the orientation quaternion based on the first set of measurements. This is done using an accelerometer-based initialization.
-        self.orientation[0] = np.array([1, 0, 0, 0]) # Starting with a neutral orientation (identity quaternion)
+        self.orientation[0] = np.array([1, 0, 0, 0]) # Starting with a neutral orientation (identity quaternion) (no rotation)
 
 
     def f(self, q, w, dt):
@@ -90,6 +88,7 @@ class EKF:
     def F_jacobian(self, w, dt):
         """
         Compute the Jacobian of the state prediction function f with respect to the state quaternion.
+        The Jacobian captures how small changes in the quaternion q affect predicted state q_t+1
 
         Parameters:
         - w: Angular velocity vector [wx, wy, wz]
@@ -235,12 +234,12 @@ class EKF:
         """
         for t in range(1, self.num_steps):
             # Compute time step
-            dt = (self.time[t] - self.time[t - 1]) / 1000.0  # Convert ms to seconds
+            dt = (self.time[t] - self.time[t - 1]) / 1000.0
 
             # Get current state and measurement
             q = self.orientation[t - 1]
             w = self.gyroData[t]
-            z_t = self.measurements[t]
+            z_t = self.measurements[t] # measurements vector
 
             # Prediction Step
             q_hat = self.f(q, w, dt)  # Predict next state
@@ -251,12 +250,12 @@ class EKF:
             H = self.H_jacobian(q_hat, self.g)  # Jacobian of measurement function
 
             # Kalman gain
-            R = np.diag(self.accNoise)  # Measurement noise covariance
+            R = np.diag(self.accNoise)  # Measurement noise covariance is expressed directly in terms of the statistics of the measurement noise affecting each sensor
             S = H @ P_hat @ H.T + R  # Residual covariance
             K = P_hat @ H.T @ np.linalg.inv(S)  # Kalman gain
 
             # Update quaternion estimate with measurement residual
-            v_t = z_t - h_q_hat  # Measurement residual
+            v_t = z_t - h_q_hat  # Measurement residual (innovation)
             q_hat = q_hat + K @ v_t  # Update state estimate
             q_hat /= np.linalg.norm(q_hat)  # Re-normalize quaternion
 

@@ -6,7 +6,8 @@ from EKF import *
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
 
-data = pd.read_csv('data/train.csv')
+# Load the dataset
+data = pd.read_csv('data/test.csv')
 
 time = data['Time'].values  # Zakładamy, że czas jest w sekundach
 gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # Zmiana jednostek z deg/s na rad/s
@@ -21,7 +22,6 @@ gyro_bias = np.mean(gyroData[:num_stationary_samples], axis=0)
 gyroData_calibrated = gyroData - gyro_bias
 
 # Krok 2: Kalibracja akcelerometru
-# Zakładamy, że w stanie spoczynku przyspieszenie w osi Z = 9.81, a w osiach X i Y = 0
 acc_bias = np.mean(accData[:num_stationary_samples], axis=0) - np.array([0, 0, 9.81])
 accData_calibrated = accData - acc_bias
 
@@ -30,19 +30,15 @@ ekf = EKF(gyroData=gyroData_calibrated, accData=accData_calibrated, time=time)
 # główna funkcja EKFa
 ekf.run()
 
-
-# Assuming `orientation` stores quaternion orientations at each step
+# ekf.orientation stores quaternion orientations at each step
 orientations = ekf.orientation
-
 
 quaternions = []
 for i, orientation in enumerate(orientations):
-    # print(f"Step {i+1} - Quaternion Orientation: {orientation}")
     quaternions.append(orientation)
 
-# source: 
+# Source: Quaternion to Euler angles (in 3-2-1 sequence)
 # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
-# Quaternion to Euler angles (in 3-2-1 sequence) conversion
 def quaternion_to_euler(q):
     w, x, y, z = q
     
@@ -54,11 +50,29 @@ def quaternion_to_euler(q):
     # Convert radians to degrees
     return np.degrees(roll), np.degrees(pitch), np.degrees(yaw)
 
+# Unwrap yaw angles
+def unwrap_yaw(yaw_angles):
+    """
+    Unwrap the yaw angles to remove discontinuities.
+    """
+    return np.unwrap(np.radians(yaw_angles)) * (180 / np.pi)
 
-output = []
-for i, q in enumerate(quaternions):
+# Compute roll, pitch, yaw and unwrap yaw
+euler_angles = []
+yaw_angles = []
+for q in quaternions:
     roll, pitch, yaw = quaternion_to_euler(q)
-    output.append(f"{i+1},{pitch:.2f},{roll:.2f},{yaw:.2f}")
+    euler_angles.append((roll, pitch, yaw))
+    yaw_angles.append(yaw)
+
+# Unwrap the yaw angles
+yaw_angles_unwrapped = unwrap_yaw(yaw_angles)
+
+# Generate the output data
+output = []
+for i, (roll, pitch, yaw) in enumerate(euler_angles):
+    yaw_unwrapped = yaw_angles_unwrapped[i]
+    output.append(f"{i+1},{pitch:.2f},{roll:.2f},{yaw_unwrapped:.2f}")
 
 # Print the output in CSV format
 print("Id,pitch,roll,yaw")
@@ -67,15 +81,15 @@ for line in output:
 
 data = {
     "Id": [i + 1 for i in range(len(quaternions))],
-    "pitch": [quaternion_to_euler(q)[1] for q in quaternions],
-    "roll": [quaternion_to_euler(q)[0] for q in quaternions],
-    "yaw": [quaternion_to_euler(q)[2] for q in quaternions],
+    "pitch": [euler[1] for euler in euler_angles],
+    "roll": [euler[0] for euler in euler_angles],
+    "yaw": yaw_angles_unwrapped,  # Use the unwrapped yaw angles
 }
 
 df = pd.DataFrame(data)
 df.to_csv("orientation_test_output.csv", index=False, float_format="%.2f")
 
-
+# Plotting function (unchanged)
 def plot_angles(csv_file):
     data = pd.read_csv(csv_file)
     
@@ -118,17 +132,16 @@ def plot_angles(csv_file):
     plt.grid()
 
     plt.tight_layout()
+    plt.savefig('yaw_unwrap.png')
     plt.show()
-
 
 plot_angles('data/train.csv')
 
+# Calculate MSE (unchanged)
 def calculate_mse(original_csv, computed_csv) -> None:
-    # Load original and computed data
     original_data = pd.read_csv(original_csv)
     computed_data = pd.read_csv(computed_csv)
     
-    # Extract roll, pitch, yaw from each dataset
     roll_original = original_data['roll']
     pitch_original = original_data['pitch']
     yaw_original = original_data['yaw']
@@ -137,12 +150,10 @@ def calculate_mse(original_csv, computed_csv) -> None:
     pitch_computed = computed_data['pitch']
     yaw_computed = computed_data['yaw']
     
-    # Calculate mean squared error for each angle
     mse_roll = mean_squared_error(roll_original, roll_computed)
     mse_pitch = mean_squared_error(pitch_original, pitch_computed)
     mse_yaw = mean_squared_error(yaw_original, yaw_computed)
     
-    # Print and return the results
     print(f"MSE for Roll: {mse_roll}")
     print(f"MSE for Pitch: {mse_pitch}")
     print(f"MSE for Yaw: {mse_yaw}")

@@ -27,12 +27,16 @@ class EKF:
         # Set default noise values if none are provided
         if gyroNoise is None:
             # The assumption that the noise variances of the gyroscope axes are all equal is almost never true in reality. 
-            self.gyroNoise = [0.3 ** 2, 0.3 ** 2, 0.3 ** 2]
+            #self.gyroNoise = [0.3 ** 2, 0.3 ** 2, 0.3 ** 2]
+            #self.gyroNoise = [0.01 ** 2, 0.015 ** 2, 0.005 ** 2]
+            self.gyroNoise = [0.015 ** 2, 0.015 ** 2, 0.005 ** 2]
         else:
             self.gyroNoise = gyroNoise
 
         if accNoise is None:
-            self.accNoise = [0.5 ** 2, 0.5 ** 2, 0.5 ** 2]
+            #self.accNoise = [0.5 ** 2, 0.5 ** 2, 0.5 ** 2]
+            #self.accNoise = [0.01 ** 2, 0.015 ** 2, 0.005 ** 2]
+            self.accNoise = [0.015 ** 2, 0.015 ** 2, 0.005 ** 2]
         else:
             self.accNoise = accNoise
 

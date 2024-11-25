@@ -65,4 +65,11 @@ def calculate_mse(original_csv, computed_csv):
     print(f"MSE for Pitch: {mse_pitch}")
     print(f"MSE for Yaw: {mse_yaw}")
 
+    mse_3d = mean_squared_error(
+        original_data[['roll', 'pitch', 'yaw']],
+        computed_data[['roll', 'pitch', 'yaw']]
+    )
+
+    print(f"MSE in 3D space: {mse_3d}")
+
 

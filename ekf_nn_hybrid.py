@@ -9,7 +9,7 @@ from sklearn.metrics import mean_squared_error
 from ekf_plotting import plot_angles, calculate_mse
 
 # Load the dataset
-data = pd.read_csv('data/train.csv')
+data = pd.read_csv('data/test.csv')
 
 time = data['Time'].values
 gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # Convert deg/s to rad/s
@@ -69,13 +69,24 @@ def acc_to_roll_pitch(acc):
 
 
 # Run Kalman Filter
-euler_angles = []  # Store [roll, pitch, yaw]
+forward_states = []  # Store state vectors
+forward_covs = []    # Store covariances
+euler_angles = []    # Store [roll, pitch, yaw]
+
+data_ours = pd.read_csv('orientation_test_output.csv')
+
 for i in range(len(time)):
     # Predict step
     kf.predict()
 
     # Measurement (from accelerometer for roll/pitch, gyroscope for yaw)
     roll, pitch = acc_to_roll_pitch(accData[i])
+
+    # load from the other model
+    roll, pitch = data_ours['roll'][i], data_ours['pitch'][i]
+    roll *= np.pi / 180
+    pitch *= np.pi / 180
+
     yaw_rate = gyroData[i, 2] * dt  # Integrate yaw rate for yaw angle
     kf.x[2] += yaw_rate  # Update yaw estimate in state vector
     measurement = np.array([roll, pitch, kf.x[2]])
@@ -86,7 +97,6 @@ for i in range(len(time)):
     # Store results
     euler_angles.append(kf.x[:3])
 
-# Convert to DataFrame for saving
 euler_angles = np.array(euler_angles)
 data_out = pd.DataFrame({
     "Id": np.arange(1, len(euler_angles) + 1),
@@ -94,7 +104,7 @@ data_out = pd.DataFrame({
     "roll": np.degrees(euler_angles[:, 0]),
     "yaw": np.degrees(euler_angles[:, 2]) / 1000
 })
-data_out.to_csv("orientation_test_output_filterpy.csv", index=False, float_format="%.2f")
+data_out.to_csv("orientation_test_output_hybrid.csv", index=False, float_format="%.4f")
 
-plot_angles("orientation_test_output_filterpy.csv", "data/train.csv")
-calculate_mse("data/train.csv", "orientation_test_output_filterpy.csv")
+plot_angles("orientation_test_output_hybrid.csv", "data/train.csv")
+calculate_mse("data/train.csv", "orientation_test_output_hybrid.csv")

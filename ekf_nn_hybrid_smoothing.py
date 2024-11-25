@@ -9,7 +9,7 @@ from sklearn.metrics import mean_squared_error
 from ekf_plotting import plot_angles, calculate_mse
 
 # Load the dataset
-data = pd.read_csv('data/train.csv')
+data = pd.read_csv('data/test.csv')
 
 time = data['Time'].values
 gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # Convert deg/s to rad/s
@@ -69,13 +69,24 @@ def acc_to_roll_pitch(acc):
 
 
 # Run Kalman Filter
-euler_angles = []  # Store [roll, pitch, yaw]
+forward_states = []  # Store state vectors
+forward_covs = []    # Store covariances
+euler_angles = []    # Store [roll, pitch, yaw]
+
+filterpy_data = pd.read_csv('orientation_test_output.csv')
+
 for i in range(len(time)):
     # Predict step
     kf.predict()
 
     # Measurement (from accelerometer for roll/pitch, gyroscope for yaw)
     roll, pitch = acc_to_roll_pitch(accData[i])
+
+    # # load from the other model
+    roll, pitch = filterpy_data['roll'][i], filterpy_data['pitch'][i]
+    roll *= np.pi / 180
+    pitch *= np.pi / 180
+
     yaw_rate = gyroData[i, 2] * dt  # Integrate yaw rate for yaw angle
     kf.x[2] += yaw_rate  # Update yaw estimate in state vector
     measurement = np.array([roll, pitch, kf.x[2]])
@@ -84,17 +95,35 @@ for i in range(len(time)):
     kf.update(measurement)
 
     # Store results
+    forward_states.append(kf.x.copy())
+    forward_covs.append(kf.P.copy())
     euler_angles.append(kf.x[:3])
 
-# Convert to DataFrame for saving
-euler_angles = np.array(euler_angles)
-data_out = pd.DataFrame({
-    "Id": np.arange(1, len(euler_angles) + 1),
-    "pitch": np.degrees(euler_angles[:, 1]),
-    "roll": np.degrees(euler_angles[:, 0]),
-    "yaw": np.degrees(euler_angles[:, 2]) / 1000
-})
-data_out.to_csv("orientation_test_output_filterpy.csv", index=False, float_format="%.2f")
+# Convert to numpy arrays
+forward_states = np.array(forward_states)
+forward_covs = np.array(forward_covs)
 
-plot_angles("orientation_test_output_filterpy.csv", "data/train.csv")
-calculate_mse("data/train.csv", "orientation_test_output_filterpy.csv")
+# RTS Smoother
+smoothed_states = np.copy(forward_states)
+for t in range(len(time)-2, -1, -1):
+    F = kf.F
+    Q = kf.Q
+
+    predicted_state = F @ forward_states[t]
+    predicted_cov = F @ forward_covs[t] @ F.T + Q
+
+    K = forward_covs[t] @ F.T @ np.linalg.inv(predicted_cov)
+
+    smoothed_states[t] += K @ (smoothed_states[t+1] - predicted_state)
+
+# Convert smoothed results to DataFrame
+data_out = pd.DataFrame({
+    "Id": np.arange(1, len(smoothed_states) + 1),
+    "pitch": np.degrees(smoothed_states[:, 1]),
+    "roll": np.degrees(smoothed_states[:, 0]),
+    "yaw": np.degrees(smoothed_states[:, 2]) / 1000
+})
+data_out.to_csv("orientation_test_output_hybrid_smoothing.csv", index=False, float_format="%.2f")
+
+plot_angles("orientation_test_output_hybrid.csv", "data/train.csv")
+calculate_mse("data/train.csv", "orientation_test_output_hybrid.csv")

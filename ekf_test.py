@@ -1,54 +1,41 @@
 import numpy as np
 import pandas as pd
-import csv
-import math
-from EKF import *
+from EKF import EKF
 import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error
 
-# Wczytywanie danych
 data = pd.read_csv('data/train.csv')
 
-# Ekstrakcja danych dla czujników
-time = data['Time'].values  # Zakładamy, że czas jest w sekundach
-gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # Zmiana jednostek z deg/s na rad/s
-accData = data[['AccX', 'AccY', 'AccZ']].values * 9.81  # Zmiana jednostek na m/s²
-magData = data[['MagX', 'MagY', 'MagZ']].values * 100  # Zmiana jednostek magnetometru (jeśli dane są w mG)
+time = data['Time'].values
+gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # convert deg/s to rad/s
+accData = data[['AccX', 'AccY', 'AccZ']].values * 9.81  # convert unit to  m/s²
+magData = data[['MagX', 'MagY', 'MagZ']].values / 100  # convert magnetometer valeus (if values are in mG) 
 
-# Określenie liczby próbek w stanie spoczynku
-num_stationary_samples = 400
+# number of samples when robot was stationary (required for calibration)
+num_stationary_samples = 1000
 
-# Krok 1: Kalibracja żyroskopu
+# gyroscope calibration
 gyro_bias = np.mean(gyroData[:num_stationary_samples], axis=0)
 gyroData_calibrated = gyroData - gyro_bias
 
-# Krok 2: Kalibracja akcelerometru
-# Zakładamy, że w stanie spoczynku przyspieszenie w osi Z = 9.81, a w osiach X i Y = 0
+# accelerometer calibration
 acc_bias = np.mean(accData[:num_stationary_samples], axis=0) - np.array([0, 0, 9.81])
 accData_calibrated = accData - acc_bias
 
-# Krok 3: Kalibracja magnetometru
-# Zakładamy przesunięcie jako średnią wartość początkowych próbek w każdej osi
-mag_bias = np.mean(magData[:num_stationary_samples], axis=0)
-magData_calibrated = magData - mag_bias
+ekf = EKF(gyroData=gyroData_calibrated, accData=accData_calibrated, time=time)
 
-# Inicjalizacja EKF z poprawionymi danymi (należy mieć zaimplementowany EKF)
-ekf = EKF(gyroData=gyroData_calibrated, accData=accData_calibrated, magData=magData, time=time)
-ekf.P *= 1  # Opcjonalna modyfikacja macierzy kowariancji na początek
-
-# Uruchomienie EKF
+# main EKF function
 ekf.run()
 
-# Access the results
-# Assuming `orientation` stores quaternion orientations at each step
+# ekf.orientation stores quaternion orientations at each step
 orientations = ekf.orientation
 
-# Print the results (e.g., first few orientation estimates)
 quaternions = []
 for i, orientation in enumerate(orientations):
-    # print(f"Step {i+1} - Quaternion Orientation: {orientation}")
     quaternions.append(orientation)
 
-
+# Source: Quaternion to Euler angles (in 3-2-1 sequence)
+# https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
 def quaternion_to_euler(q):
     w, x, y, z = q
     
@@ -60,35 +47,29 @@ def quaternion_to_euler(q):
     # Convert radians to degrees
     return np.degrees(roll), np.degrees(pitch), np.degrees(yaw)
 
+# Unwrap yaw angles
+def unwrap_yaw(yaw_angles):
+    """
+    Unwrap the yaw angles to remove discontinuities.
+    """
+    return np.unwrap(np.radians(yaw_angles)) * (180 / np.pi)
 
-def euler_from_quaternion(q):
-        """
-        Convert a quaternion into euler angles (roll, pitch, yaw)
-        roll is rotation around x in radians (counterclockwise)
-        pitch is rotation around y in radians (counterclockwise)
-        yaw is rotation around z in radians (counterclockwise)
-        """
-        w, x, y, z = q
-        t0 = +2.0 * (w * x + y * z)
-        t1 = +1.0 - 2.0 * (x * x + y * y)
-        roll_x = math.atan2(t0, t1)
-     
-        t2 = +2.0 * (w * y - z * x)
-        t2 = +1.0 if t2 > +1.0 else t2
-        t2 = -1.0 if t2 < -1.0 else t2
-        pitch_y = math.asin(t2)
-     
-        t3 = +2.0 * (w * z + x * y)
-        t4 = +1.0 - 2.0 * (y * y + z * z)
-        yaw_z = math.atan2(t3, t4)
-     
-        return roll_x, pitch_y, yaw_z # in radians
-
-
-output = []
-for i, q in enumerate(quaternions):
+# Compute roll, pitch, yaw and unwrap yaw
+euler_angles = []
+yaw_angles = []
+for q in quaternions:
     roll, pitch, yaw = quaternion_to_euler(q)
-    output.append(f"{i+1},{pitch:.2f},{roll:.2f},{yaw:.2f}")
+    euler_angles.append((roll, pitch, yaw))
+    yaw_angles.append(yaw)
+
+# Unwrap the yaw angles
+yaw_angles_unwrapped = unwrap_yaw(yaw_angles)
+
+# Generate the output data
+output = []
+for i, (roll, pitch, yaw) in enumerate(euler_angles):
+    yaw_unwrapped = yaw_angles_unwrapped[i]
+    output.append(f"{i+1},{pitch:.2f},{roll:.2f},{yaw_unwrapped:.2f}")
 
 # Print the output in CSV format
 print("Id,pitch,roll,yaw")
@@ -97,16 +78,16 @@ for line in output:
 
 data = {
     "Id": [i + 1 for i in range(len(quaternions))],
-    "pitch": [quaternion_to_euler(q)[1] for q in quaternions],
-    "roll": [quaternion_to_euler(q)[0] for q in quaternions],
-    "yaw": [quaternion_to_euler(q)[2] for q in quaternions],
+    "pitch": [euler[1] for euler in euler_angles],
+    "roll": [euler[0] for euler in euler_angles],
+    "yaw": yaw_angles_unwrapped,  # Use the unwrapped yaw angles
 }
 
 df = pd.DataFrame(data)
 df.to_csv("orientation_test_output.csv", index=False, float_format="%.2f")
 
-
-def plot_angles(computed_angles, csv_file):
+# Plotting function
+def plot_angles(csv_file):
     data = pd.read_csv(csv_file)
     
     roll_data = data['roll']
@@ -148,7 +129,48 @@ def plot_angles(computed_angles, csv_file):
     plt.grid()
 
     plt.tight_layout()
+    plt.savefig('yaw_unwrap.png')
     plt.show()
 
+plot_angles('data/train.csv')
 
-plot_angles(quaternions, 'data/train.csv')
+# Calculate MSE
+def calculate_mse(original_csv, computed_csv) -> None:
+    original_data = pd.read_csv(original_csv)
+    computed_data = pd.read_csv(computed_csv)
+    
+    roll_original = original_data['roll']
+    pitch_original = original_data['pitch']
+    yaw_original = original_data['yaw']
+    
+    roll_computed = computed_data['roll']
+    pitch_computed = computed_data['pitch']
+    yaw_computed = computed_data['yaw']
+    
+    # Calculate Mean Squared Error (MSE) for each axis
+    mse_roll = mean_squared_error(roll_original, roll_computed)
+    mse_pitch = mean_squared_error(pitch_original, pitch_computed)
+    mse_yaw = mean_squared_error(yaw_original, yaw_computed)
+    
+    # Combine all axis values into a single array for overall MSE calculation
+    original_combined = np.concatenate([
+        roll_original.to_numpy(),
+        pitch_original.to_numpy(),
+        yaw_original.to_numpy()
+    ])
+    computed_combined = np.concatenate([
+        roll_computed.to_numpy(),
+        pitch_computed.to_numpy(),
+        yaw_computed.to_numpy()
+    ])
+    
+    # Calculate overall MSE across all three axes
+    mse_overall = mean_squared_error(original_combined, computed_combined)
+    
+    print(f"MSE for Roll: {mse_roll}")
+    print(f"MSE for Pitch: {mse_pitch}")
+    print(f"MSE for Yaw: {mse_yaw}")
+    print(f"Overall MSE: {mse_overall}")
+
+
+calculate_mse("data/train.csv", "orientation_test_output.csv")

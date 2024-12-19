@@ -1,33 +1,30 @@
 import numpy as np
 import pandas as pd
-import csv
-import math
-from EKF import *
+from EKF import EKF
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
 
-# Load the dataset
-data = pd.read_csv('data/test.csv')
+data = pd.read_csv('data/train.csv')
 
-time = data['Time'].values  # Zakładamy, że czas jest w sekundach
-gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # Zmiana jednostek z deg/s na rad/s
-accData = data[['AccX', 'AccY', 'AccZ']].values * 9.81  # Zmiana jednostek na m/s²
-magData = data[['MagX', 'MagY', 'MagZ']].values / 100  # Zmiana jednostek magnetometru (jeśli dane są w mG) (było razy 1000) # 15.11.2024 Zakładamy, że dane są w mikro Teslach, a chcemy uzyskać dane w Gaussach więc dzielimy przez 100
+time = data['Time'].values
+gyroData = data[['GyroX', 'GyroY', 'GyroZ']].values * np.pi / 180  # convert deg/s to rad/s
+accData = data[['AccX', 'AccY', 'AccZ']].values * 9.81  # convert unit to  m/s²
+magData = data[['MagX', 'MagY', 'MagZ']].values / 100  # convert magnetometer valeus (if values are in mG) 
 
-# Określenie liczby próbek w stanie spoczynku (potrzebne do kalibracji)
+# number of samples when robot was stationary (required for calibration)
 num_stationary_samples = 1000
 
-# Krok 1: Kalibracja żyroskopu
+# gyroscope calibration
 gyro_bias = np.mean(gyroData[:num_stationary_samples], axis=0)
 gyroData_calibrated = gyroData - gyro_bias
 
-# Krok 2: Kalibracja akcelerometru
+# accelerometer calibration
 acc_bias = np.mean(accData[:num_stationary_samples], axis=0) - np.array([0, 0, 9.81])
 accData_calibrated = accData - acc_bias
 
 ekf = EKF(gyroData=gyroData_calibrated, accData=accData_calibrated, time=time)
 
-# główna funkcja EKFa
+# main EKF function
 ekf.run()
 
 # ekf.orientation stores quaternion orientations at each step
@@ -89,7 +86,7 @@ data = {
 df = pd.DataFrame(data)
 df.to_csv("orientation_test_output.csv", index=False, float_format="%.2f")
 
-# Plotting function (unchanged)
+# Plotting function
 def plot_angles(csv_file):
     data = pd.read_csv(csv_file)
     
@@ -137,7 +134,7 @@ def plot_angles(csv_file):
 
 plot_angles('data/train.csv')
 
-# Calculate MSE (unchanged)
+# Calculate MSE
 def calculate_mse(original_csv, computed_csv) -> None:
     original_data = pd.read_csv(original_csv)
     computed_data = pd.read_csv(computed_csv)
@@ -150,12 +147,30 @@ def calculate_mse(original_csv, computed_csv) -> None:
     pitch_computed = computed_data['pitch']
     yaw_computed = computed_data['yaw']
     
+    # Calculate Mean Squared Error (MSE) for each axis
     mse_roll = mean_squared_error(roll_original, roll_computed)
     mse_pitch = mean_squared_error(pitch_original, pitch_computed)
     mse_yaw = mean_squared_error(yaw_original, yaw_computed)
     
+    # Combine all axis values into a single array for overall MSE calculation
+    original_combined = np.concatenate([
+        roll_original.to_numpy(),
+        pitch_original.to_numpy(),
+        yaw_original.to_numpy()
+    ])
+    computed_combined = np.concatenate([
+        roll_computed.to_numpy(),
+        pitch_computed.to_numpy(),
+        yaw_computed.to_numpy()
+    ])
+    
+    # Calculate overall MSE across all three axes
+    mse_overall = mean_squared_error(original_combined, computed_combined)
+    
     print(f"MSE for Roll: {mse_roll}")
     print(f"MSE for Pitch: {mse_pitch}")
     print(f"MSE for Yaw: {mse_yaw}")
+    print(f"Overall MSE: {mse_overall}")
+
 
 calculate_mse("data/train.csv", "orientation_test_output.csv")

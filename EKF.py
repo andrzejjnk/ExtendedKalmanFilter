@@ -5,6 +5,7 @@ class EKF:
     EKF Class for computing Extended Kalman Filter
     Based on measurements from MARG-type sensors (now only gyro and accelerometer)
     to compute orientation of an object with reference to the ENU (East, North, Up) reference frame.
+    Source: https://ahrs.readthedocs.io/en/latest/filters/ekf.html
     """
 
     def __init__(self, gyroData, accData, time, gyroNoise=None, accNoise=None):
@@ -27,16 +28,12 @@ class EKF:
         # Set default noise values if none are provided
         if gyroNoise is None:
             # The assumption that the noise variances of the gyroscope axes are all equal is almost never true in reality. 
-            #self.gyroNoise = [0.3 ** 2, 0.3 ** 2, 0.3 ** 2]
-            #self.gyroNoise = [0.01 ** 2, 0.015 ** 2, 0.005 ** 2]
-            self.gyroNoise = [0.015 ** 2, 0.015 ** 2, 0.005 ** 2]
+            self.gyroNoise = [0.3 ** 2, 0.3 ** 2, 0.3 ** 2]
         else:
             self.gyroNoise = gyroNoise
 
         if accNoise is None:
-            #self.accNoise = [0.5 ** 2, 0.5 ** 2, 0.5 ** 2]
-            #self.accNoise = [0.01 ** 2, 0.015 ** 2, 0.005 ** 2]
-            self.accNoise = [0.015 ** 2, 0.015 ** 2, 0.005 ** 2]
+            self.accNoise = [0.5 ** 2, 0.5 ** 2, 0.5 ** 2]
         else:
             self.accNoise = accNoise
 
@@ -102,13 +99,12 @@ class EKF:
         - F: 4x4 Jacobian matrix
         """
         wx, wy, wz = w
-        dq = dt / 2.0
 
         F = np.array([
-            [1,     -dq * wx, -dq * wy, -dq * wz],
-            [dq * wx,    1,  dq * wz, -dq * wy],
-            [dq * wy, -dq * wz,    1,  dq * wx],
-            [dq * wz,  dq * wy, -dq * wx,    1]
+            [1,     -dt / 2.0 * wx, -dt / 2.0 * wy, -dt / 2.0 * wz],
+            [dt / 2.0 * wx,    1,  dt / 2.0 * wz, -dt / 2.0 * wy],
+            [dt / 2.0 * wy, -dt / 2.0 * wz,    1,  dt / 2.0 * wx],
+            [dt / 2.0 * wz,  dt / 2.0 * wy, -dt / 2.0 * wx,    1]
         ])
 
         return F
